@@ -1,0 +1,9 @@
+node_modules
+.next
+.vercel
+.env*.local
+*.log
+.DS_Store
+coverage
+.turbo
+next-env.d.ts
