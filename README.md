@@ -39,21 +39,25 @@ Personal-use scope. Built on Next.js 15, Auth.js v5, Drizzle ORM, Neon Postgres.
 Pure rule-based, no AI calls. The pipeline:
 
 1. Cached Strava rows → `processActivities` adds GAP (grade-adjusted pace) and a weighted-percentile effort bucket (`easy` / `moderate` / `hard`).
-2. `computeAthleteState` derives 7d/28d load, ACWR (acute:chronic workload ratio), days since last run, longest 28d run, typical flat/hilly pace.
+2. `computeAthleteState` derives 7d/28d load, ACWR (acute:chronic workload ratio), days since last run, longest 28d run, typical flat/hilly pace, and "days since last tempo/intervals/long-run."
 3. `generateSuggestions` picks a mode:
-   - **Onboarding** (oldest activity <14 days old): 3 canned easy sessions to start.
-   - **Returning** (no run in last 14 days): 3 conservative sessions to ease back.
-   - **Normal**: runs the rule set below, dedupes by type, pads up to 3 with fillers.
+   - **Onboarding** (`prefs.onboarded === false`, or <5 lifetime activities, or <25 km lifetime distance): 3 canned easy sessions to start.
+   - **Returning** (no run in the last 14 days): 3 conservative sessions to ease back.
+   - **Race day** (`goal = race` and `race_date` is today): a single shake-out/rest card.
+   - **Normal**: runs the rule set below, dedupes by type, pads up to 3 with fillers. Lower-priority candidates surface as **alternatives** in a collapsed disclosure.
 
 Rules (normal mode):
 
 - **Recovery override** — triggers on (a) yesterday's run was >90 min or `hard` bucket, (b) ACWR > 1.5 with enough load, or (c) the "bothering" injury chip is set. When it fires, all other rules are skipped.
-- **Long run** — fires only on your configured long-run day (ISO weekday). Targets ~10% over your longest 28d run.
-- **Race-quality** — `goal = race`: tempo/intervals tuned to race distance (5k/10k/half/marathon/ultra). Skipped if yesterday was hard or you're inside a 14-day taper window.
-- **Easy default** — adaptive duration (clamped 25–55 min) at conversational pace. Reason text adapts to whether you're flushing legs, behind on volume, or just doing base work.
+- **Long run** — fires on your configured long-run day (ISO weekday) with a 5-day guard, or as a catch-up later in the same ISO week if the preferred day already passed and no long run has been logged. Targets ~10% over your longest 28d run.
+- **Race-quality (tempo)** — `goal = race`: tempo tuned to race distance (5k/10k/half/marathon/ultra). Skipped if yesterday was hard.
+- **Intervals** — `goal = race` and `race_distance` is 5k or 10k: structured reps × distance with jog recovery, sized from your 28-day weekly average. Skipped during race week. Shares priority 2 with tempo; older session-type wins (ties favor intervals).
+- **Easy default** — adaptive duration (clamped 30–50 min) at conversational pace. Reason text adapts to whether you're flushing legs, behind on volume, or just doing base work. Emits longer/shorter/strides/trail variants for the alternatives surface.
 - **Cross-train / rest** — adds a cross-train if you already ran today; adds a rest day if `volume_preference = recover` and you're near your 28d weekly average.
 
-The engine returns at most 3 suggestions (priorities 1/2/3). The "Get an AI plan from these prefs" button on the dashboard opens a modal with a structured prompt (preferences + training state + recent sessions + today's 3 deterministic suggestions) — paste into ChatGPT or Claude for a 7-day plan.
+In a race taper window the engine scales `duration_min` on running suggestions (and `suggested_weekly_target_min`) by a distance-aware scalar — marathon/ultra 14d (0.80 → 0.60), half 10d (0.85 → 0.65), 10k 7d (1.00 → 0.75), 5k 5d (1.00 → 0.70). Pace is never reduced.
+
+The engine returns at most 3 suggestions (priorities 1/2/3) plus up to 8 alternatives. The "Get an AI plan from these prefs" button on the dashboard opens a modal with a structured prompt (preferences + training state + recent sessions + today's 3 deterministic suggestions + alternatives) — paste into ChatGPT or Claude for a 7-day plan.
 
 ## Deploy to Vercel
 

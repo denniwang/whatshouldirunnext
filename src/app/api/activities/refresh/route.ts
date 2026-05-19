@@ -7,7 +7,7 @@ export async function POST() {
   const session = await auth();
   if (!session?.user?.id) return new NextResponse("unauthorized", { status: 401 });
   try {
-    const result = await syncIfStale(session.user.id, false);
+    const result = await syncIfStale(session.user.id);
     return NextResponse.json(result);
   } catch (e) {
     if (e instanceof RateLimitedError) {

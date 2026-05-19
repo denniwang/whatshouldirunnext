@@ -1,11 +1,17 @@
+"use client";
 import type { WorkoutSuggestion } from "@/lib/suggestions/types";
 import {
-  DEFAULT_UNITS,
   formatDistance,
   formatPace,
+  formatReason,
   paceLabel,
   type UnitSystem,
 } from "@/lib/units";
+import { useUnits } from "./UnitsProvider";
+
+// Units come from UnitsProvider context. The dashboard wraps its content in a
+// provider seeded from the cookie, so SSR sees the correct value and the
+// toggle updates clients instantly without a server round trip.
 
 const TYPE_COLOR: Record<WorkoutSuggestion["type"], string> = {
   easy: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
@@ -17,32 +23,28 @@ const TYPE_COLOR: Record<WorkoutSuggestion["type"], string> = {
   "cross-train": "bg-violet-500/15 text-violet-300 border-violet-500/40",
 };
 
-const TYPE_LABEL: Record<WorkoutSuggestion["type"], string> = {
-  easy: "easy",
-  long: "long",
-  tempo: "tempo",
-  intervals: "intervals",
-  recovery: "recovery",
-  rest: "rest",
-  "cross-train": "cross-train",
-};
-
 function headline(s: WorkoutSuggestion): string {
   if (s.type === "rest") return "Rest day";
   if (s.type === "cross-train") return `Cross-train · ${s.duration_min} min`;
-  return `${TYPE_LABEL[s.type]} run · ${s.duration_min} min`;
+  return `${s.type} run · ${s.duration_min} min`;
 }
 
 function specifics(s: WorkoutSuggestion, units: UnitSystem): string | null {
   if (s.type === "rest") return null;
   if (s.type === "cross-train") return s.terrain !== "any" ? `${s.terrain}` : "yoga · bike · walk · mobility";
   const parts: string[] = [];
-  if (s.pace_target_low && s.pace_target_high) {
-    const lo = formatPace(s.pace_target_low, units, false);
-    const hi = formatPace(s.pace_target_high, units, false);
+  if (s.type === "intervals" && s.repetitions && s.rep_distance_m) {
+    parts.push(`${s.repetitions} × ${s.rep_distance_m}m`);
+    if (s.recovery_duration_s) {
+      parts.push(`${s.recovery_duration_s}s ${s.recovery_type ?? "jog"} recovery`);
+    }
+  }
+  if (s.pace_range) {
+    const lo = formatPace(s.pace_range.low, units, false);
+    const hi = formatPace(s.pace_range.high, units, false);
     parts.push(`Target ${lo}–${hi}${paceLabel(units)}`);
   }
-  if (s.distance_km_estimate > 0) {
+  if (s.distance_km_estimate > 0 && s.type !== "intervals") {
     parts.push(`~${formatDistance(s.distance_km_estimate, units, 1)}`);
   }
   if (s.terrain !== "any") parts.push(s.terrain);
@@ -51,13 +53,12 @@ function specifics(s: WorkoutSuggestion, units: UnitSystem): string | null {
 
 export function SuggestionCard({
   s,
-  units = DEFAULT_UNITS,
   compact = false,
 }: {
   s: WorkoutSuggestion;
-  units?: UnitSystem;
   compact?: boolean;
 }) {
+  const units = useUnits();
   const spec = specifics(s, units);
   const isTomorrow = s.for_when === "tomorrow";
   return (
@@ -74,11 +75,14 @@ export function SuggestionCard({
         <span
           className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${TYPE_COLOR[s.type]}`}
         >
-          {TYPE_LABEL[s.type]}
+          {s.type}
         </span>
       </div>
       {spec && <p className="mt-1 text-xs text-[var(--muted)]">{spec}</p>}
-      <p className="mt-3 text-sm text-[var(--muted)]">{s.reason}</p>
+      {s.pace_note && (
+        <p className="mt-1 text-[11px] italic text-[var(--muted)]">{formatReason(s.pace_note, units)}</p>
+      )}
+      <p className="mt-3 text-sm text-[var(--muted)]">{formatReason(s.reason, units)}</p>
     </article>
   );
 }

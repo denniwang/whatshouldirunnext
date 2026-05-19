@@ -55,3 +55,28 @@ export function formatPace(secPerKm: number, u: UnitSystem, withUnit = true): st
   const base = `${m}:${String(s).padStart(2, "0")}`;
   return withUnit ? `${base}${paceLabel(u)}` : base;
 }
+
+// Expand {d:N} (distance in km) and {p:N} / {p:LO-HI} (pace in sec/km) tokens
+// in suggestion reason/pace_note strings produced by the engine. The engine is
+// unit-agnostic — formatting happens at display time so the units toggle can
+// update text instantly without a server round trip.
+const REASON_TOKEN_RE = /\{(d|p):([^}]+)\}/g;
+
+export function formatReason(text: string, u: UnitSystem): string {
+  return text.replace(REASON_TOKEN_RE, (_, kind: "d" | "p", value: string) => {
+    if (kind === "d") {
+      const km = Number.parseFloat(value);
+      if (!Number.isFinite(km)) return "";
+      return formatDistance(km, u, 1);
+    }
+    const rangeMatch = /^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$/.exec(value);
+    if (rangeMatch) {
+      const lo = Number.parseFloat(rangeMatch[1]!);
+      const hi = Number.parseFloat(rangeMatch[2]!);
+      return `${formatPace(lo, u, false)}–${formatPace(hi, u, false)}${paceLabel(u)}`;
+    }
+    const single = Number.parseFloat(value);
+    if (!Number.isFinite(single)) return "";
+    return formatPace(single, u, true);
+  });
+}

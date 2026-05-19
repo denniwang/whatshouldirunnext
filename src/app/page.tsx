@@ -19,7 +19,26 @@ export default async function HomePage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col px-5 py-10">
       <header className="mb-10">
-        <h1 className="text-3xl font-bold tracking-tight">whatshouldirunnext</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          what<br/>should<br/>i
+          <span
+            role="img"
+            aria-label="run"
+            className="inline-block h-[1em] w-[1em] align-[-0.15em] bg-current"
+            style={{
+              WebkitMaskImage: "url(/run.svg)",
+              maskImage: "url(/run.svg)",
+              WebkitMaskRepeat: "no-repeat",
+              maskRepeat: "no-repeat",
+              WebkitMaskSize: "contain",
+              maskSize: "contain",
+              WebkitMaskPosition: "center",
+              maskPosition: "center",
+              margin:"4px"
+            }}
+          />
+          next?
+        </h1>
         <p className="mt-2 text-sm text-[var(--muted)]">
           Suggestions for your next workout, based on your real Strava history.
         </p>

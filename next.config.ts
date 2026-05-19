@@ -1,9 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  experimental: {
-    typedRoutes: false,
-  },
+  typedRoutes: false,
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "dgalywyr863hv.cloudfront.net" },

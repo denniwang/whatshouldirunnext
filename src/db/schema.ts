@@ -146,7 +146,35 @@ export const stravaAppRateState = pgTable("strava_app_rate_state", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const suggestionOutcomes = pgTable(
+  "suggestion_outcomes",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    suggestionId: text("suggestion_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    shownAt: timestamp("shown_at", { withTimezone: true }).notNull(),
+    outcome: text("outcome").notNull(),
+    actualActivityId: bigint("actual_activity_id", { mode: "number" }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userShownIdx: index("suggestion_outcomes_user_shown_idx").on(t.userId, t.shownAt),
+    suggestionIdx: index("suggestion_outcomes_suggestion_idx").on(t.suggestionId),
+    outcomeCheck: check(
+      "suggestion_outcomes_outcome_check",
+      sql`${t.outcome} IN ('completed','modified','skipped','ignored')`
+    ),
+  })
+);
+
 export type Preferences = typeof preferences.$inferSelect;
 export type NewPreferences = typeof preferences.$inferInsert;
 export type ActivityCacheRow = typeof activityCache.$inferSelect;
 export type NewActivityCacheRow = typeof activityCache.$inferInsert;
+export type SuggestionOutcomeRow = typeof suggestionOutcomes.$inferSelect;
+export type NewSuggestionOutcomeRow = typeof suggestionOutcomes.$inferInsert;

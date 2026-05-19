@@ -6,17 +6,18 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db/client";
 import { preferences } from "@/db/schema";
-import { syncIfStale, getCachedActivities } from "@/lib/strava/sync";
-import { processActivities, isRunLike, type RawActivity } from "@/lib/suggestions/processed";
+import { syncIfStale, getCachedActivities, rowToRaw } from "@/lib/strava/sync";
+import { processActivities, isRunLike } from "@/lib/suggestions/processed";
 import { generateSuggestions } from "@/lib/suggestions/engine";
-import { buildLlmPrompt } from "@/lib/suggestions/prompt";
-import { buildStateSummary } from "@/lib/suggestions/state-summary";
+import { buildStateSummaryParts } from "@/lib/suggestions/state-summary";
 import { adaptDbPrefs } from "@/lib/suggestions/prefs-adapter";
 import { SuggestionCard } from "@/components/SuggestionCard";
 import { AiPlanModal } from "@/components/AiPlanModal";
 import { RefreshButton } from "@/components/RefreshButton";
 import { PoweredByStrava } from "@/components/PoweredByStrava";
 import { UnitsToggle } from "@/components/UnitsToggle";
+import { UnitsProvider } from "@/components/UnitsProvider";
+import { StateSummary } from "@/components/StateSummary";
 import {
   WeekRunsDropdown,
   type WeekRun,
@@ -69,16 +70,7 @@ export default async function DashboardPage() {
   }
 
   const rows = await getCachedActivities(userId, 90);
-  const raws: RawActivity[] = rows.map((r) => ({
-    id: r.stravaActivityId,
-    sport_type: r.sportType,
-    distance: r.distanceM,
-    moving_time: r.movingTimeS,
-    total_elevation_gain: r.totalElevationGainM ?? 0,
-    start_date: r.startDate,
-    start_date_local: r.startDateLocal,
-  }));
-  const processed = processActivities(raws);
+  const processed = processActivities(rows.map(rowToRaw));
 
   const now = new Date();
   const { suggestions, alternatives, state, mode } = generateSuggestions(
@@ -87,22 +79,11 @@ export default async function DashboardPage() {
     now
   );
   const weeklyTargetMin = prefRows[0]!.weeklyTargetMinutes;
-  const summary = buildStateSummary(
+  const summaryParts = buildStateSummaryParts(
     processed,
-    state,
     prefsInput,
     now,
-    units,
     weeklyTargetMin
-  );
-  const prompt = buildLlmPrompt(
-    processed,
-    state,
-    prefsInput,
-    suggestions,
-    now,
-    units,
-    alternatives
   );
 
   const weekCutoff = now.getTime() - 7 * 86_400_000;
@@ -139,72 +120,95 @@ export default async function DashboardPage() {
   };
 
   return (
-    <main className="mx-auto max-w-md px-5 py-6 pb-32">
-      <header className="mb-5 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            {format(now, "EEEE, MMM d")}
-          </h1>
-          {summary && (
-            <p className="mt-0.5 text-xs text-[var(--muted)]">{summary}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <UnitsToggle initial={units} />
-          <Link href="/preferences" className="text-sm text-strava underline">
-            Preferences
-          </Link>
-        </div>
-      </header>
-
-      {syncError && (
-        <div className="card mb-4 border-amber-500/40 bg-amber-500/10">
-          <p className="text-sm text-amber-400">{syncError}</p>
-        </div>
-      )}
-
-      {mode !== "normal" && MODE_BANNER[mode] && (
-        <div className="card mb-4 border-sky-500/40 bg-sky-500/10">
-          <p className="text-sm font-medium text-sky-300">{MODE_BANNER[mode]!.title}</p>
-          <p className="mt-1 text-xs text-sky-300/80">{MODE_BANNER[mode]!.body}</p>
-        </div>
-      )}
-
-      <WeekRunsDropdown runs={weekRuns} stats={weekStats} units={units} />
-
-      <section className="space-y-3">
-        {suggestions.map((s) => (
-          <SuggestionCard key={`${s.priority}-${s.type}`} s={s} units={units} />
-        ))}
-      </section>
-
-      {alternatives.length > 0 && (
-        <details className="mt-4 group">
-          <summary className="cursor-pointer list-none rounded-lg border border-[var(--border)] bg-[var(--card)]/60 px-4 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--fg)] flex items-center justify-between">
-            <span>Show other options ({alternatives.length})</span>
-            <span className="text-xs transition-transform group-open:rotate-180">▾</span>
-          </summary>
-          <div className="mt-3 space-y-3">
-            {alternatives.map((s, i) => (
-              <SuggestionCard
-                key={`alt-${i}-${s.type}-${s.duration_min}`}
-                s={s}
-                units={units}
-                compact
-              />
-            ))}
+    <UnitsProvider initial={units}>
+      <main className="mx-auto max-w-md px-5 py-6 pb-32">
+        <header className="mb-5 flex items-start justify-between">
+          <div>
+          <h1 className="text-3xl font-bold tracking-tight">
+          what<br/>should<br/>i
+          <span
+            role="img"
+            aria-label="run"
+            className="inline-block h-[1em] w-[1em] align-[-0.15em] bg-current"
+            style={{
+              WebkitMaskImage: "url(/run.svg)",
+              maskImage: "url(/run.svg)",
+              WebkitMaskRepeat: "no-repeat",
+              maskRepeat: "no-repeat",
+              WebkitMaskSize: "contain",
+              maskSize: "contain",
+              WebkitMaskPosition: "center",
+              maskPosition: "center",
+              margin:"4px"
+            }}
+          />
+          next?
+        </h1>
+            <StateSummary parts={summaryParts} />
           </div>
-        </details>
-      )}
+          <div className="flex items-center gap-3">
+            <UnitsToggle />
+            <Link href="/preferences" className="text-sm text-strava underline">
+              Preferences
+            </Link>
+          </div>
+        </header>
 
-      <div className="fixed inset-x-0 bottom-0 border-t border-[var(--border)] bg-[var(--bg)]/95 backdrop-blur px-5 py-3">
-        <div className="mx-auto flex max-w-md gap-2">
-          <AiPlanModal prompt={prompt} />
-          <RefreshButton />
+        {syncError && (
+          <div className="card mb-4 border-amber-500/40 bg-amber-500/10">
+            <p className="text-sm text-amber-400">{syncError}</p>
+          </div>
+        )}
+
+        {mode !== "normal" && MODE_BANNER[mode] && (
+          <div className="card mb-4 border-sky-500/40 bg-sky-500/10">
+            <p className="text-sm font-medium text-sky-300">{MODE_BANNER[mode]!.title}</p>
+            <p className="mt-1 text-xs text-sky-300/80">{MODE_BANNER[mode]!.body}</p>
+          </div>
+        )}
+
+        <WeekRunsDropdown runs={weekRuns} stats={weekStats} />
+
+        <section className="space-y-3">
+          {suggestions.map((s) => (
+            <SuggestionCard key={`${s.priority}-${s.type}`} s={s} />
+          ))}
+        </section>
+
+        {alternatives.length > 0 && (
+          <details className="mt-4 group">
+            <summary className="cursor-pointer list-none rounded-lg border border-[var(--border)] bg-[var(--card)]/60 px-4 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--fg)] flex items-center justify-between">
+              <span>Show other options ({alternatives.length})</span>
+              <span className="text-xs transition-transform group-open:rotate-180">▾</span>
+            </summary>
+            <div className="mt-3 space-y-3">
+              {alternatives.map((s, i) => (
+                <SuggestionCard
+                  key={`alt-${i}-${s.type}-${s.duration_min}`}
+                  s={s}
+                  compact
+                />
+              ))}
+            </div>
+          </details>
+        )}
+
+        <div className="fixed inset-x-0 bottom-0 border-t border-[var(--border)] bg-[var(--bg)]/95 backdrop-blur px-5 py-3">
+          <div className="mx-auto flex max-w-md gap-2">
+            <AiPlanModal
+              processed={processed}
+              state={state}
+              prefs={prefsInput}
+              suggestions={suggestions}
+              alternatives={alternatives}
+              nowIso={now.toISOString()}
+            />
+            <RefreshButton />
+          </div>
         </div>
-      </div>
 
-      <PoweredByStrava />
-    </main>
+        <PoweredByStrava />
+      </main>
+    </UnitsProvider>
   );
 }

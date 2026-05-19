@@ -1,10 +1,49 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  AthleteState,
+  PreferencesInput,
+  ProcessedActivity,
+  WorkoutSuggestion,
+} from "@/lib/suggestions/types";
+import { buildLlmPrompt } from "@/lib/suggestions/prompt";
+import { useUnits } from "./UnitsProvider";
 
-export function AiPlanModal({ prompt }: { prompt: string }) {
+interface AiPlanModalProps {
+  processed: ProcessedActivity[];
+  state: AthleteState;
+  prefs: PreferencesInput;
+  suggestions: WorkoutSuggestion[];
+  alternatives: WorkoutSuggestion[];
+  nowIso: string;
+}
+
+export function AiPlanModal({
+  processed,
+  state,
+  prefs,
+  suggestions,
+  alternatives,
+  nowIso,
+}: AiPlanModalProps) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const units = useUnits();
+
+  const prompt = useMemo(
+    () =>
+      buildLlmPrompt(
+        processed,
+        state,
+        prefs,
+        suggestions,
+        new Date(nowIso),
+        units,
+        alternatives
+      ),
+    [processed, state, prefs, suggestions, alternatives, nowIso, units]
+  );
 
   useEffect(() => {
     if (!open) return;

@@ -22,5 +22,6 @@ export function adaptDbPrefs(row: Preferences): PreferencesInput {
     bothering: [],
     notes: row.notes,
     volume_preference: volumePreference,
+    onboarded: true,
   };
 }

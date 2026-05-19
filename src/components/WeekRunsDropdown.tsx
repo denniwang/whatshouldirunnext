@@ -2,12 +2,11 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import {
-  DEFAULT_UNITS,
   formatDistance,
   formatElevation,
   formatPace,
-  type UnitSystem,
 } from "@/lib/units";
+import { useUnits } from "./UnitsProvider";
 
 export interface WeekRun {
   id: number;
@@ -46,12 +45,11 @@ const EFFORT_COLOR: Record<WeekRun["effort_bucket"], string> = {
 export function WeekRunsDropdown({
   runs,
   stats,
-  units = DEFAULT_UNITS,
 }: {
   runs: WeekRun[];
   stats: WeekStats;
-  units?: UnitSystem;
 }) {
+  const units = useUnits();
   const [open, setOpen] = useState(false);
 
   return (

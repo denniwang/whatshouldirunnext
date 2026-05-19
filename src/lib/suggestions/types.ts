@@ -34,8 +34,8 @@ export interface AthleteState {
   days_since_last_run: number;
   longest_run_28d_min: number;
   longest_run_28d_km: number;
-  typical_pace_flat: number;
-  typical_pace_hilly: number;
+  typical_pace_flat: number | null;
+  typical_pace_hilly: number | null;
   last_3_activities: ProcessedActivity[];
   recent_runs: ProcessedActivity[];
   hours_since_last_activity: number | null;
@@ -43,6 +43,10 @@ export interface AthleteState {
   total_activities_in_window: number;
   oldest_activity_date: Date | null;
   suggested_weekly_target_min: number;
+  days_since_last_quality_session: number;
+  days_since_last_tempo: number;
+  days_since_last_intervals: number;
+  days_since_last_long_run: number;
 }
 
 export type Goal =
@@ -74,6 +78,7 @@ export interface PreferencesInput {
   bothering: BotheringChip[];
   notes: string | null;
   volume_preference: VolumePreference;
+  onboarded: boolean;
 }
 
 export type WorkoutType =
@@ -85,14 +90,27 @@ export type WorkoutType =
   | "rest"
   | "cross-train";
 
+export interface PaceRange {
+  low: number;
+  high: number;
+}
+
 export interface WorkoutSuggestion {
   type: WorkoutType;
   duration_min: number;
   distance_km_estimate: number;
-  pace_target_low: number;
-  pace_target_high: number;
+  pace_range: PaceRange | null;
+  pace_note?: string;
   terrain: "flat" | "rolling" | "hilly" | "any";
   reason: string;
   priority: number;
   for_when?: "today" | "tomorrow";
+  warmup_min?: number;
+  cooldown_min?: number;
+  repetitions?: number;
+  rep_distance_m?: number;
+  rep_duration_s?: number;
+  recovery_duration_s?: number;
+  recovery_type?: "jog" | "walk";
+  suggestion_id?: string;
 }

@@ -3,7 +3,6 @@ import type { EffortBucket, ProcessedActivity } from "./types";
 export interface RawActivity {
   id: number;
   sport_type: string;
-  type?: string;
   distance: number;
   moving_time: number;
   total_elevation_gain?: number | null;
@@ -94,13 +93,4 @@ export function processActivities(raws: RawActivity[]): ProcessedActivity[] {
       return { ...p, effort_score, effort_bucket: bucketize(inverse) };
     })
     .sort((a, b) => b.date.getTime() - a.date.getTime());
-}
-
-export function filterToLastDays(
-  processed: ProcessedActivity[],
-  now: Date,
-  days: number
-): ProcessedActivity[] {
-  const cutoff = now.getTime() - days * 86_400_000;
-  return processed.filter((p) => p.date.getTime() >= cutoff);
 }

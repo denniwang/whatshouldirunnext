@@ -1,12 +1,13 @@
 import { eq, desc } from "drizzle-orm";
 import { db } from "@/db/client";
-import { activityCache, stravaRateState } from "@/db/schema";
+import { activityCache, stravaRateState, type ActivityCacheRow } from "@/db/schema";
 import { fetchAthleteActivities } from "./client";
+import type { RawActivity } from "@/lib/suggestions/processed";
 
 const SYNC_WINDOW_MS = 15 * 60 * 1000;
 const LOOKBACK_DAYS = 90;
 
-export async function syncIfStale(userId: string, force = false) {
+export async function syncIfStale(userId: string) {
   const rows = await db
     .select()
     .from(stravaRateState)
@@ -15,7 +16,6 @@ export async function syncIfStale(userId: string, force = false) {
   const state = rows[0];
   const now = Date.now();
   if (
-    !force &&
     state?.lastFullSyncAt &&
     now - state.lastFullSyncAt.getTime() < SYNC_WINDOW_MS
   ) {
@@ -82,4 +82,16 @@ export async function getCachedActivities(userId: string, sinceDays = 90) {
     .where(eq(activityCache.userId, userId))
     .orderBy(desc(activityCache.startDate));
   return rows.filter((r) => r.startDate >= cutoff);
+}
+
+export function rowToRaw(r: ActivityCacheRow): RawActivity {
+  return {
+    id: r.stravaActivityId,
+    sport_type: r.sportType,
+    distance: r.distanceM,
+    moving_time: r.movingTimeS,
+    total_elevation_gain: r.totalElevationGainM ?? 0,
+    start_date: r.startDate,
+    start_date_local: r.startDateLocal,
+  };
 }

@@ -12,6 +12,7 @@ import {
   formatDistance,
   formatElevation,
   formatPace,
+  formatReason,
   kmToDisplay,
   type UnitSystem,
 } from "@/lib/units";
@@ -37,15 +38,18 @@ function daysAvailableLabel(p: PreferencesInput): string {
 }
 
 function suggLine(s: WorkoutSuggestion, units: UnitSystem): string {
-  const pace = s.pace_target_low && s.pace_target_high
-    ? `${formatPace(s.pace_target_low, units)}–${formatPace(s.pace_target_high, units)}`
+  const pace = s.pace_range
+    ? `${formatPace(s.pace_range.low, units)}–${formatPace(s.pace_range.high, units)}`
+    : s.pace_note
+    ? `tbd (${formatReason(s.pace_note, units)})`
     : "—";
   const dur = s.duration_min > 0 ? `${s.duration_min} min` : "rest";
   const km = s.distance_km_estimate > 0
     ? `~${formatDistance(s.distance_km_estimate, units, 1)}, `
     : "";
   const when = s.for_when === "tomorrow" ? " [for tomorrow]" : "";
-  return `${s.priority}. ${s.type}${when}: ${dur}, ${km}target ${pace}, ${s.terrain}. Why: ${s.reason}`;
+  const why = formatReason(s.reason, units);
+  return `${s.priority}. ${s.type}${when}: ${dur}, ${km}target ${pace}, ${s.terrain}. Why: ${why}`;
 }
 
 export function buildLlmPrompt(
@@ -104,7 +108,9 @@ export function buildLlmPrompt(
       ? `- Hours since last activity: ${Math.round(state.hours_since_last_activity)}`
       : null,
     `- Longest run in last 28d: ${Math.round(state.longest_run_28d_min)} min / ${longestRunDist}`,
-    `- Typical flat pace: ${formatPace(state.typical_pace_flat, units)}`,
+    state.typical_pace_flat !== null
+      ? `- Typical flat pace: ${formatPace(state.typical_pace_flat, units)}`
+      : "- Typical flat pace: (not enough data yet)",
     state.typical_pace_hilly && state.typical_pace_hilly !== state.typical_pace_flat
       ? `- Typical hilly GAP: ${formatPace(state.typical_pace_hilly, units)}`
       : null,

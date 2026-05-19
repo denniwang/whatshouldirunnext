@@ -10,7 +10,7 @@ Personal-use Next.js 15 (App Router) + TypeScript app. Connect Strava → set pr
 
 - Next.js 15 App Router, React 19, TS
 - Auth.js v5 (`next-auth@5.0.0-beta.25`) with Strava provider + `@auth/drizzle-adapter`
-- Drizzle ORM + Neon Postgres (`@neondatabase/serverless` HTTP driver)
+- Drizzle ORM + Postgres via `postgres-js` (Neon-compatible)
 - Tailwind v3, mobile-first
 - vitest for the suggestion engine + processed-activity pipeline
 
@@ -18,10 +18,10 @@ Personal-use Next.js 15 (App Router) + TypeScript app. Connect Strava → set pr
 
 - `src/auth.config.ts` — edge-safe Auth.js slice: providers (Strava scope `read,activity:read_all`), callbacks, pages. No DB imports.
 - `src/auth.ts` — Node-only assembly: spreads `authConfig`, attaches `DrizzleAdapter`, sets `session.strategy = "database"`. Exports `auth`, `handlers`, `signIn`, `signOut`.
-- `src/db/schema.ts` — all tables (managed Auth.js tables + `preferences`, `activity_cache`, rate-state tables)
-- `src/db/client.ts` — Drizzle + Neon HTTP client
+- `src/db/schema.ts` — all tables (managed Auth.js tables + `preferences`, `activity_cache`, rate-state tables, `suggestion_outcomes`)
+- `src/db/client.ts` — Drizzle + `postgres-js` client
 - `src/lib/strava/client.ts` — fetch wrapper with auto-refresh, rate-limit headers, 429 backoff
-- `src/lib/strava/sync.ts` — 90-day pull, 15-min staleness gate, upserts into `activity_cache`
+- `src/lib/strava/sync.ts` — 90-day pull, 15-min staleness gate, upserts into `activity_cache`; exports `rowToRaw` helper for cached row → `RawActivity`
 - `src/lib/suggestions/processed.ts` — `processActivities`: raw Strava → `ProcessedActivity` (GAP, weighted-percentile effort buckets)
 - `src/lib/suggestions/state.ts` — `computeAthleteState`: 7d/28d load, ACWR, days-since-last-run, typical pace
 - `src/lib/suggestions/rules.ts` — rule functions returning `RuleCandidate[]`, composed in `generateCandidates`
@@ -51,7 +51,7 @@ This project uses the Auth.js v5 **split config** pattern. Respect it — gettin
 ## Conventions
 
 - All Strava calls go through `src/lib/strava/client.ts` server-side. Never call Strava from the client.
-- Suggestion engine is pure: `generateSuggestions(processed, prefs, now) => EngineResult` (`{ state, suggestions, mode }`). Inject `now` for tests.
+- Suggestion engine is pure: `generateSuggestions(processed, prefs, now) => EngineResult` (`{ state, suggestions, alternatives, mode }`). Inject `now` for tests.
 - Pipeline order: cached rows → `RawActivity[]` (rename fields) → `processActivities` → `ProcessedActivity[]` → `generateSuggestions`. The engine never sees DB rows.
 - DB stores the **legacy** preferences shape (`sports`, `weeklyTargetMinutes`, `weeklyTargetSessions`, `intensityPref`, `restDays`, `longSessionDay`, `maxHr`, `notes`). The engine speaks a **different** shape (`goal`, `race_distance`, `race_date`, `days_available`, `long_run_day`, `bothering`, `volume_preference`, `notes`). Bridge: `adaptDbPrefs(row)` in `prefs-adapter.ts` — always call it before passing prefs to the engine. The form/API still read/write the legacy shape; do not change that without also doing a DB migration.
 - Use `start_date_local` for "which day did the user train"; `start_date` (UTC) for ordering only.
@@ -85,17 +85,19 @@ Strava: 100 / 15min + 1000 / day per app. Activity sync is gated to once per 15 
 
 ## Engine modes
 
-`generateSuggestions` picks one of three paths up front:
+`generateSuggestions` picks one of four paths up front:
 
-- **`onboarding`** — oldest activity is <14 days old. Returns 3 canned suggestions (easy / easy or light-tempo / rest). No rules run.
+- **`onboarding`** — `prefs.onboarded === false`, OR fewer than 5 lifetime activities, OR <25 km lifetime distance. Returns 3 canned suggestions (easy / easy or light-tempo / rest). No rules run.
 - **`returning`** — no Run/TrailRun/VirtualRun in the last 14 days. Returns 3 canned conservative suggestions (very-easy / cross-train / rest). No rules run.
-- **`normal`** — runs `generateCandidates`, dedupes by `type` (keep lowest `priority`), pads up to 3 with fillers (`easy` → `cross-train` → `rest`), then renumbers `priority` to `1, 2, 3` and strips the `source` tag.
+- **`race_day`** — `prefs.goal === "race"` and `race_date` is today. Returns a single shake-out/rest card.
+- **`normal`** — runs `generateCandidates`, dedupes by `type` (keep lowest `priority`), pads up to 3 with fillers (`easy` → `long` → `cross-train` → `rest`), renumbers `priority` to `1, 2, 3`, strips the `source` tag, stamps a `suggestion_id`, and (in race-taper window) scales `duration_min` and `suggested_weekly_target_min` by `taperScalar`. Lower-priority candidates that didn't make the top 3 are returned as `alternatives` (up to 8).
 
 The dashboard surfaces non-normal modes via a banner; tests assert on `mode`.
 
 ## Adding a new rule
 
-1. Write a function in `src/lib/suggestions/rules.ts` that takes `RuleContext` and returns `RuleCandidate[]` (a `WorkoutSuggestion` plus a `source: string` tag for debugging).
+1. Write a function in `src/lib/suggestions/rules.ts` that takes `RuleContext` and returns `RuleCandidate[]` (a `WorkoutSuggestion` plus a `source: string` tag for debugging and a `tier_break` from `tierBreakFor(type)`).
 2. Call it from `generateCandidates(...)`. Recovery runs first and the rest gate themselves on `recoveryFired` — preserve that pattern if your rule is mutually-exclusive with recovery.
-3. Set `priority` carefully — **lower wins** during dedupe. Conventions in use: recovery=1, long-run=1, race-quality=2, easy-default=3, cross/rest=4, fillers=9–11.
-4. Add a vitest case in `tests/suggestions.test.ts`. Use `processActivities(rawAct(...))` to build inputs.
+3. Set `priority` carefully — **lower wins** during dedupe; `tier_break` resolves cross-type ties at the same `priority`. Conventions: recovery=1, long-run=1, race-quality (tempo/intervals)=2, easy-default=3, cross/rest=4, variants=5–8, fillers=9–11. `tier_break` table is `TIER_BREAK_BY_TYPE` in `rules.ts`.
+4. Taper-aware duration shrinking is centralized in `engine.ts → taperScalar / applyTaperScalar`. Do NOT multiply duration inside a rule — it will double-scale.
+5. Add a vitest case in `tests/suggestions.test.ts`. Use `processActivities(rawAct(...))` to build inputs.

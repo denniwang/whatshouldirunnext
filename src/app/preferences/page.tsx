@@ -7,8 +7,8 @@ import { preferences } from "@/db/schema";
 import { PreferencesForm } from "@/components/PreferencesForm";
 import { DisconnectButton } from "@/components/DisconnectButton";
 import { PoweredByStrava } from "@/components/PoweredByStrava";
-import { getCachedActivities } from "@/lib/strava/sync";
-import { processActivities, type RawActivity } from "@/lib/suggestions/processed";
+import { getCachedActivities, rowToRaw } from "@/lib/strava/sync";
+import { processActivities } from "@/lib/suggestions/processed";
 import { computeAthleteState } from "@/lib/suggestions/state";
 
 export const dynamic = "force-dynamic";
@@ -26,16 +26,7 @@ export default async function PreferencesPage() {
   const p = rows[0]!;
 
   const acts = await getCachedActivities(userId, 90);
-  const raws: RawActivity[] = acts.map((r) => ({
-    id: r.stravaActivityId,
-    sport_type: r.sportType,
-    distance: r.distanceM,
-    moving_time: r.movingTimeS,
-    total_elevation_gain: r.totalElevationGainM ?? 0,
-    start_date: r.startDate,
-    start_date_local: r.startDateLocal,
-  }));
-  const processed = processActivities(raws);
+  const processed = processActivities(acts.map(rowToRaw));
   const state = computeAthleteState(processed, new Date());
   const suggested =
     state.total_runs_in_window >= 3 ? state.suggested_weekly_target_min : null;

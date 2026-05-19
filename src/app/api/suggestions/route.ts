@@ -4,10 +4,10 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db/client";
 import { preferences } from "@/db/schema";
-import { getCachedActivities, syncIfStale } from "@/lib/strava/sync";
+import { getCachedActivities, rowToRaw, syncIfStale } from "@/lib/strava/sync";
 import { generateSuggestions } from "@/lib/suggestions/engine";
 import { buildLlmPrompt } from "@/lib/suggestions/prompt";
-import { processActivities, type RawActivity } from "@/lib/suggestions/processed";
+import { processActivities } from "@/lib/suggestions/processed";
 import { adaptDbPrefs } from "@/lib/suggestions/prefs-adapter";
 import { DEFAULT_UNITS, UNITS_COOKIE, isUnitSystem } from "@/lib/units";
 
@@ -31,16 +31,7 @@ export async function GET() {
     // serve cached anyway
   }
   const rows = await getCachedActivities(userId, 90);
-  const raws: RawActivity[] = rows.map((r) => ({
-    id: r.stravaActivityId,
-    sport_type: r.sportType,
-    distance: r.distanceM,
-    moving_time: r.movingTimeS,
-    total_elevation_gain: r.totalElevationGainM ?? 0,
-    start_date: r.startDate,
-    start_date_local: r.startDateLocal,
-  }));
-  const processed = processActivities(raws);
+  const processed = processActivities(rows.map(rowToRaw));
   const now = new Date();
   const result = generateSuggestions(processed, prefsInput, now);
   return NextResponse.json({
